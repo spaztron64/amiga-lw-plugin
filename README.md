@@ -20,7 +20,7 @@ Physically-based Fresnel shader for Layout. Adds realistic angle-dependent
 reflectivity to surfaces using Schlick's approximation. Edges become more
 reflective and less transparent at glancing angles — essential for convincing
 glass, water, and polished surfaces. Configurable IOR, power, and independent
-control over reflection and transparency effects.
+control over reflection, diffuse and transparency effects.
 
 ## Toolchain
 
