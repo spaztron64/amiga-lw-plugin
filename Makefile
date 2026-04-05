@@ -65,9 +65,18 @@ $(BUILD)/objswap.p: $(BUILD)/objswap.o sdk $(STUBS)
 
 objswap: $(BUILD)/objswap.p
 
+# Fresnel - Physically-based Fresnel shader
+$(BUILD)/fresnel.o: $(SRC)/fresnel/fresnel.c | $(BUILD)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(BUILD)/fresnel.p: $(BUILD)/fresnel.o sdk $(STUBS)
+	$(call build-plugin,$@,$<)
+
+fresnel: $(BUILD)/fresnel.p
+
 # ---- Targets ----
 
-all: sdk objswap
+all: sdk objswap fresnel
 
 clean:
 	rm -f $(BUILD)/*.o $(BUILD)/*.p $(SDK_LIB)/server.a $(SDK_LIB)/serv_gcc.o

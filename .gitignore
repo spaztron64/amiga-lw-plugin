@@ -12,3 +12,4 @@ Thumbs.db
 .idea/
 sdk/lib/*.a
 sdk/lib/*.o
+*.tiff

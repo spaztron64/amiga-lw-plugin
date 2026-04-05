@@ -14,6 +14,14 @@ Given a base object `Ship.lwo`, the plugin scans the directory for
 corresponding frames. If no exact frame match exists, the most recent
 replacement before the current frame is used.
 
+### Fresnel
+
+Physically-based Fresnel shader for Layout. Adds realistic angle-dependent
+reflectivity to surfaces using Schlick's approximation. Edges become more
+reflective and less transparent at glancing angles — essential for convincing
+glass, water, and polished surfaces. Configurable IOR, power, and independent
+control over reflection and transparency effects.
+
 ## Toolchain
 
 Uses `sacredbanana/amiga-compiler:m68k-amigaos` Docker image providing:
@@ -26,6 +34,7 @@ Uses `sacredbanana/amiga-compiler:m68k-amigaos` Docker image providing:
 ```bash
 ./build.sh          # Build SDK library + all plugins
 ./build.sh objswap  # Build ObjSwap only
+./build.sh fresnel  # Build Fresnel only
 ./build.sh clean    # Clean build artifacts
 ```
 
@@ -39,6 +48,8 @@ on the Amiga, then add the plugin lines to your LW config file:
 ```
 Plugin ObjReplacementHandler ObjSwap objswap.p ObjSwap
 Plugin ObjReplacementInterface ObjSwap objswap.p ObjSwap
+Plugin ShaderHandler Fresnel fresnel.p Fresnel
+Plugin ShaderInterface Fresnel fresnel.p Fresnel
 ```
 
 ## SDK
@@ -62,5 +73,6 @@ library, patched for GCC compatibility:
 │   ├── lib/              # Built libraries
 │   └── source/           # Library source
 └── src/
-    └── objswap/          # ObjSwap plugin source
+    ├── objswap/          # ObjSwap plugin source
+    └── fresnel/          # Fresnel shader source
 ```
