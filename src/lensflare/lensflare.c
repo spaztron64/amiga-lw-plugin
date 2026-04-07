@@ -372,6 +372,10 @@ Process(LensFlareInst *inst, const FilterAccess *fa)
 
 				imaxR = sGlow * 4;
 				if (sStrk > imaxR) imaxR = sStrk;
+				if (inst->anamorphic) {
+					int aMax = sStrk * 6;
+					if (aMax > imaxR) imaxR = aMax;
+				}
 				ir2 = idx * idx + idy * idy;
 				if (ir2 > imaxR * imaxR) continue;
 
@@ -407,17 +411,18 @@ Process(LensFlareInst *inst, const FilterAccess *fa)
 					}
 				}
 
-				if (inst->anamorphic) {
+			if (inst->anamorphic) {
 					double ax = dx > 0 ? dx : -dx;
-					if (dy > -4.0 && dy < 4.0 && ax < (double)sStrk) {
-						double hfade = 1.0 - ax / (double)sStrk;
-						double hw = 1.0 / (1.0 + dy * dy * 0.3);
-						double h = hfade * hw * inten * bright * 0.5;
-							tR += h * 0.4;
-							tG += h * 0.6;
-							tB += h * 1.0;
-						}
+					double aLen = (double)sStrk * 4.0;
+					if (ax < aLen) {
+						double hfade = 1.0 - ax / aLen;
+						double hw = 1.0 / (1.0 + dy * dy * 0.02);
+						double h = hfade * hfade * hw * inten * bright * 0.7;
+						tR += h * 0.3;
+						tG += h * 0.5;
+						tB += h * 1.0;
 					}
+				}
 
 				if (nStrk > 0) {
 					double sdx = dx, sdy = dy;
