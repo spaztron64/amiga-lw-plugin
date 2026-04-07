@@ -6,12 +6,17 @@ an Image Filter in Layout's Effects panel.
 
 ## How It Works
 
-1. Scans the specular buffer for pixels above a brightness threshold
-2. Identifies the 8 brightest specular hotspots
-3. For each hotspot, renders:
+1. Scans the rendered RGB buffer for pixels above a brightness threshold
+2. Identifies the 8 brightest hotspots with depth-based scaling
+3. Single-pass compositing renders per pixel:
+   - Bright core at the source point
    - Circular glow with quadratic falloff
+   - Chromatic ring at half-glow radius
+   - Horizontal anamorphic streak
    - 6-point hexagonal star streaks with fade
-4. Additively blends the flare onto the final rendered image
+4. Uses max-per-flare blending (brightest flare wins at each pixel,
+   preventing blowout when flares overlap)
+5. Depth-aware: further highlights produce smaller, subtler flares
 
 The flare has a warm color tint (white center fading to amber) for a
 natural camera lens look.
@@ -38,11 +43,11 @@ Plugin ImageFilterHandler LensFlare lensflare.p LensFlare
 
 | Setting | Default | Description |
 |---|---|---|
-| Threshold | 200 | Minimum specular brightness (0-255) to trigger flare |
-| Glow Radius | 40 | Radius of circular glow in pixels |
-| Streak Length | 80 | Length of star streaks in pixels |
-| Intensity | 60 | Overall flare brightness (0-100) |
-| Streak Count | 6 | Number of star streak arms (max 6) |
+| Threshold | 220 | Minimum brightness (0-255) to trigger flare |
+| Glow Radius | 100 | Radius of circular glow in pixels |
+| Streak Length | 200 | Length of star streaks in pixels |
+| Intensity | 80 | Overall flare brightness (0-100) |
+| Streaks | 6 | Number of star streak arms (2/4/6) |
 
 ### Tips
 
@@ -55,7 +60,8 @@ Plugin ImageFilterHandler LensFlare lensflare.p LensFlare
 
 ### Performance Notes
 
-- Uses bounding-box optimization: only processes pixels near each flare source
-- Pass 1 (specular scan): O(width x height) — fast
-- Pass 2 (flare render): processes only the bounding box around each source
-- On JIT emulators: very fast. On real 68k: depends on number of flare sources and radii
+- Pass 1 (brightness scan): O(width x height) — fast integer math
+- Pass 2 (composite): single pass over entire image, checks each pixel
+  against all flare sources with early distance-skip for fast rejection
+- On JIT emulators: fast. On real 68k: depends on image resolution and
+  glow radius (larger radius = more pixels within range per flare)

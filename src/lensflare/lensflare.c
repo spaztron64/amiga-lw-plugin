@@ -18,7 +18,6 @@
 #include <exec/memory.h>
 
 extern struct ExecBase *SysBase;
-extern double sqrt(double);
 
 /* ----------------------------------------------------------------
  * Memory helpers
@@ -119,6 +118,7 @@ static const double streak_dy[6] = {
 typedef struct {
 	int x, y;
 	int brightness;
+	double depth;
 } FlareSource;
 
 typedef struct {
@@ -148,10 +148,10 @@ Create(LWError *err)
 	inst = (LensFlareInst *)plugin_alloc(sizeof(LensFlareInst));
 	if (!inst) return 0;
 
-	inst->threshold   = 200;
-	inst->glowRadius  = 40;
-	inst->streakLength = 80;
-	inst->intensity   = 60;
+	inst->threshold   = 220;
+	inst->glowRadius  = 100;
+	inst->streakLength = 200;
+	inst->intensity   = 80;
 	inst->streakCount = 6;
 
 	return inst;
@@ -242,15 +242,19 @@ Process(LensFlareInst *inst, const FilterAccess *fa)
 		BufferValue *rLine = (*fa->bufLine)(LWBUF_RED, y);
 		BufferValue *gLine = (*fa->bufLine)(LWBUF_GREEN, y);
 		BufferValue *bLine = (*fa->bufLine)(LWBUF_BLUE, y);
+		BufferValue *dLine = (*fa->bufLine)(LWBUF_DEPTH, y);
 		if (!rLine || !gLine || !bLine) continue;
 
 		for (x = 0; x < fa->width; x++) {
 			int bright = ((int)rLine[x] + (int)gLine[x] + (int)bLine[x]) / 3;
 			if (bright >= thresh) {
+				double d = (dLine && dLine[x] > 0.0f)
+				         ? (double)dLine[x] : 1.0;
 				if (numFlares < MAX_FLARES) {
 					flares[numFlares].x = x;
 					flares[numFlares].y = y;
 					flares[numFlares].brightness = bright;
+					flares[numFlares].depth = d;
 					numFlares++;
 				} else {
 					int weakest = 0, wi;
@@ -262,9 +266,24 @@ Process(LensFlareInst *inst, const FilterAccess *fa)
 						flares[weakest].x = x;
 						flares[weakest].y = y;
 						flares[weakest].brightness = bright;
+						flares[weakest].depth = d;
 					}
 				}
 			}
+		}
+	}
+
+	for (i = 0; i < numFlares; i++) {
+		double dscale = 1.0 / (1.0 + flares[i].depth * 0.1);
+		flares[i].x |= 0;
+		{
+			int sg = (int)(gradR * dscale);
+			int sl = (int)(strkLen * dscale);
+			if (sg < 4) sg = 4;
+			if (sl < 4) sl = 4;
+			flares[i].brightness |= (sg << 16);
+			flares[i].depth = (double)(sg * sg);
+			flares[i].y = flares[i].y | (sl << 16);
 		}
 	}
 
@@ -276,68 +295,96 @@ Process(LensFlareInst *inst, const FilterAccess *fa)
 
 		for (x = 0; x < fa->width; x++) {
 			BufferValue rgb[3];
-			rgb[0] = rLine[x];
-			rgb[1] = gLine[x];
-			rgb[2] = bLine[x];
-			(*fa->setRGB)(x, y, rgb);
-		}
-	}
+			double fR = 0.0, fG = 0.0, fB = 0.0;
 
-	for (i = 0; i < numFlares; i++) {
-		int fx = flares[i].x;
-		int fy = flares[i].y;
-		double bright = flares[i].brightness / 255.0;
-		int bbox = gradR;
-		int y0, y1, x0, x1;
-
-		if (strkLen > bbox) bbox = strkLen;
-		y0 = fy - bbox; if (y0 < 0) y0 = 0;
-		y1 = fy + bbox; if (y1 >= fa->height) y1 = fa->height - 1;
-		x0 = fx - bbox; if (x0 < 0) x0 = 0;
-		x1 = fx + bbox; if (x1 >= fa->width) x1 = fa->width - 1;
-
-		for (y = y0; y <= y1; y++) {
-			BufferValue *rLine = (*fa->bufLine)(LWBUF_RED, y);
-			BufferValue *gLine = (*fa->bufLine)(LWBUF_GREEN, y);
-			BufferValue *bLine = (*fa->bufLine)(LWBUF_BLUE, y);
-			if (!rLine || !gLine || !bLine) continue;
-
-			for (x = x0; x <= x1; x++) {
+			for (i = 0; i < numFlares; i++) {
+				int fx = flares[i].x & 0xFFFF;
+				int fy = flares[i].y & 0xFFFF;
+				int sGlow = (flares[i].brightness >> 16) & 0x7FFF;
+				int sStrk = (flares[i].y >> 16) & 0x7FFF;
+				double sGlow2 = flares[i].depth;
+				double bright = (double)(flares[i].brightness & 0xFF) / 255.0;
 				double dx = (double)(x - fx);
 				double dy = (double)(y - fy);
 				double r2 = dx * dx + dy * dy;
-				double flare = 0.0;
-				double gr2 = (double)(gradR * gradR);
+				double maxR = (double)(sGlow * 4);
+				double tR = 0.0, tG = 0.0, tB = 0.0;
 
-				if (r2 < gr2)
-					flare = inten * bright * (1.0 - r2 / gr2);
+				if (sStrk > sGlow * 4) maxR = (double)sStrk;
+				if (r2 > maxR * maxR) continue;
+
+				if (r2 < 9.0) {
+					double core = inten * bright;
+					tR += core; tG += core; tB += core;
+				}
+
+				{
+					double gd = 1.0 + r2 / sGlow2;
+					double glow = inten * bright * 0.8 / (gd * gd);
+					tR += glow;
+					tG += glow * 0.8;
+					tB += glow * 0.6;
+				}
+
+				{
+					double ringR2 = sGlow2 * 0.5;
+					double rdiff = r2 - ringR2;
+					if (rdiff < 0.0) rdiff = -rdiff;
+					if (rdiff < ringR2 * 0.3) {
+						double ringI = (1.0 - rdiff / (ringR2 * 0.3))
+						             * inten * bright * 0.5;
+						tR += ringI * 1.0;
+						tG += ringI * 0.3;
+						tB += ringI * 0.8;
+					}
+				}
+
+				{
+					double ax = dx > 0 ? dx : -dx;
+					if (dy > -4.0 && dy < 4.0 && ax < (double)sStrk) {
+						double hfade = 1.0 - ax / (double)sStrk;
+						double hw = 1.0 / (1.0 + dy * dy * 0.3);
+						double h = hfade * hw * inten * bright * 0.5;
+						tR += h * 0.6;
+						tG += h * 0.8;
+						tB += h * 1.0;
+					}
+				}
 
 				for (s = 0; s < nStrk; s++) {
 					double along = dx * streak_dx[s] + dy * streak_dy[s];
 					double perp  = dx * streak_dy[s] - dy * streak_dx[s];
 					double p2 = perp * perp;
 
-					if (along > 0.0 && along < (double)strkLen && p2 < 4.0) {
-						double fade = 1.0 - along / (double)strkLen;
-						double width = 1.0 / (1.0 + p2 * 2.0);
-						flare += fade * width * inten * bright * 0.4;
+					if (along > 0.0 && along < (double)sStrk && p2 < 16.0) {
+						double fade = 1.0 - along / (double)sStrk;
+						double width = 1.0 / (1.0 + p2 * 0.5);
+						double sk = fade * width * inten * bright * 0.6;
+						tR += sk; tG += sk * 0.85; tB += sk * 0.7;
 					}
 				}
 
-				if (flare > 0.001) {
-					BufferValue rgb[3];
-					int r = rLine[x] + (int)(flare * 255.0);
-					int g = gLine[x] + (int)(flare * 200.0);
-					int b = bLine[x] + (int)(flare * 160.0);
-					if (r > 255) r = 255;
-					if (g > 255) g = 255;
-					if (b > 255) b = 255;
-					rgb[0] = (BufferValue)r;
-					rgb[1] = (BufferValue)g;
-					rgb[2] = (BufferValue)b;
-					(*fa->setRGB)(x, y, rgb);
-				}
+				if (tR > fR) fR = tR;
+				if (tG > fG) fG = tG;
+				if (tB > fB) fB = tB;
 			}
+
+			if (fR > 0.001 || fG > 0.001 || fB > 0.001) {
+				int rv = rLine[x] + (int)(fR * 255.0);
+				int gv = gLine[x] + (int)(fG * 255.0);
+				int bv = bLine[x] + (int)(fB * 255.0);
+				if (rv > 255) rv = 255;
+				if (gv > 255) gv = 255;
+				if (bv > 255) bv = 255;
+				rgb[0] = (BufferValue)rv;
+				rgb[1] = (BufferValue)gv;
+				rgb[2] = (BufferValue)bv;
+			} else {
+				rgb[0] = rLine[x];
+				rgb[1] = gLine[x];
+				rgb[2] = bLine[x];
+			}
+			(*fa->setRGB)(x, y, rgb);
 		}
 	}
 }
