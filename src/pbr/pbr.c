@@ -73,18 +73,6 @@ int_to_str(int val, char *buf, int buflen)
 	buf[len] = '\0';
 }
 
-static int
-str_to_int(const char *s)
-{
-	int val = 0, neg = 0;
-	while (*s == ' ') s++;
-	if (*s == '-') { neg = 1; s++; }
-	while (*s >= '0' && *s <= '9') {
-		val = val * 10 + (*s - '0');
-		s++;
-	}
-	return neg ? -val : val;
-}
 
 /* ----------------------------------------------------------------
  * Math helpers
@@ -280,71 +268,70 @@ Copy(PBRInst *from, PBRInst *to)
 	return 0;
 }
 
+static const char *
+parse_int(const char *s, int *val)
+{
+	int neg = 0;
+	*val = 0;
+	while (*s == ' ') s++;
+	if (*s == '-') { neg = 1; s++; }
+	while (*s >= '0' && *s <= '9') {
+		*val = *val * 10 + (*s - '0');
+		s++;
+	}
+	if (neg) *val = -*val;
+	return s;
+}
+
+static void
+append_int(char *buf, int *pos, int val)
+{
+	char tmp[12];
+	int i;
+	int_to_str(val, tmp, 12);
+	if (*pos > 0) buf[(*pos)++] = ' ';
+	for (i = 0; tmp[i]; i++)
+		buf[(*pos)++] = tmp[i];
+	buf[*pos] = '\0';
+}
+
 XCALL_(static LWError)
 Load(PBRInst *inst, const LWLoadState *ls)
 {
-	char buf[32];
+	char buf[128];
+	const char *p;
+	int v;
 	XCALL_INIT;
 
 	buf[0] = '\0';
-	(*ls->read)(ls->readData, buf, 32);
-	if (buf[0] == '\0')
-		(*ls->read)(ls->readData, buf, 32);
-	if (buf[0]) inst->ior = str_to_int(buf) / 1000.0;
+	(*ls->read)(ls->readData, buf, 127);
+	buf[127] = '\0';
+	if (buf[0] == '\0') {
+		(*ls->read)(ls->readData, buf, 127);
+		buf[127] = '\0';
+	}
+	if (!buf[0]) return 0;
 
-	buf[0] = '\0'; (*ls->read)(ls->readData, buf, 32);
-	if (buf[0]) inst->reflPower = str_to_int(buf);
-
-	buf[0] = '\0'; (*ls->read)(ls->readData, buf, 32);
-	if (buf[0]) inst->affectMirror = str_to_int(buf);
-
-	buf[0] = '\0'; (*ls->read)(ls->readData, buf, 32);
-	if (buf[0]) inst->affectTrans = str_to_int(buf);
-
-	buf[0] = '\0'; (*ls->read)(ls->readData, buf, 32);
-	if (buf[0]) inst->affectDiffuse = str_to_int(buf);
-
-	buf[0] = '\0'; (*ls->read)(ls->readData, buf, 32);
-	if (buf[0]) inst->diffPower = str_to_int(buf);
-
-	buf[0] = '\0'; (*ls->read)(ls->readData, buf, 32);
-	if (buf[0]) inst->roughEnabled = str_to_int(buf);
-
-	buf[0] = '\0'; (*ls->read)(ls->readData, buf, 32);
-	if (buf[0]) inst->roughAmount = str_to_int(buf);
-
-	buf[0] = '\0'; (*ls->read)(ls->readData, buf, 32);
-	if (buf[0]) inst->aoEnabled = str_to_int(buf);
-
-	buf[0] = '\0'; (*ls->read)(ls->readData, buf, 32);
-	if (buf[0]) inst->aoSamples = str_to_int(buf);
-
-	buf[0] = '\0'; (*ls->read)(ls->readData, buf, 32);
-	if (buf[0]) inst->aoRadius = str_to_int(buf);
-
-	buf[0] = '\0'; (*ls->read)(ls->readData, buf, 32);
-	if (buf[0]) inst->aoStrength = str_to_int(buf);
-
-	buf[0] = '\0'; (*ls->read)(ls->readData, buf, 32);
-	if (buf[0]) inst->metallic = str_to_int(buf);
-
-	buf[0] = '\0'; (*ls->read)(ls->readData, buf, 32);
-	if (buf[0]) inst->blurReflEnabled = str_to_int(buf);
-
-	buf[0] = '\0'; (*ls->read)(ls->readData, buf, 32);
-	if (buf[0]) inst->blurReflSamples = str_to_int(buf);
-
-	buf[0] = '\0'; (*ls->read)(ls->readData, buf, 32);
-	if (buf[0]) inst->blurReflAmount = str_to_int(buf);
-
-	buf[0] = '\0'; (*ls->read)(ls->readData, buf, 32);
-	if (buf[0]) inst->envEnabled = str_to_int(buf);
-
-	buf[0] = '\0'; (*ls->read)(ls->readData, buf, 32);
-	if (buf[0]) inst->envSamples = str_to_int(buf);
-
-	buf[0] = '\0'; (*ls->read)(ls->readData, buf, 32);
-	if (buf[0]) inst->envStrength = str_to_int(buf);
+	p = buf;
+	p = parse_int(p, &v); inst->ior = v / 1000.0;
+	p = parse_int(p, &v); inst->reflPower = v;
+	p = parse_int(p, &v); inst->affectMirror = v;
+	p = parse_int(p, &v); inst->affectTrans = v;
+	p = parse_int(p, &v); inst->affectDiffuse = v;
+	p = parse_int(p, &v); inst->diffPower = v;
+	p = parse_int(p, &v); inst->roughEnabled = v;
+	p = parse_int(p, &v); inst->roughAmount = v;
+	p = parse_int(p, &v); inst->aoEnabled = v;
+	p = parse_int(p, &v); inst->aoSamples = v;
+	p = parse_int(p, &v); inst->aoRadius = v;
+	p = parse_int(p, &v); inst->aoStrength = v;
+	p = parse_int(p, &v); inst->metallic = v;
+	p = parse_int(p, &v); inst->blurReflEnabled = v;
+	p = parse_int(p, &v); inst->blurReflSamples = v;
+	p = parse_int(p, &v); inst->blurReflAmount = v;
+	p = parse_int(p, &v); inst->envEnabled = v;
+	p = parse_int(p, &v); inst->envSamples = v;
+	p = parse_int(p, &v); inst->envStrength = v;
 
 	compute_f0(inst);
 	return 0;
@@ -353,65 +340,31 @@ Load(PBRInst *inst, const LWLoadState *ls)
 XCALL_(static LWError)
 Save(PBRInst *inst, const LWSaveState *ss)
 {
-	char buf[32];
+	char buf[128];
+	int pos = 0;
 	XCALL_INIT;
 
-	int_to_str((int)(inst->ior * 1000.0), buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
+	append_int(buf, &pos, (int)(inst->ior * 1000.0));
+	append_int(buf, &pos, inst->reflPower);
+	append_int(buf, &pos, inst->affectMirror);
+	append_int(buf, &pos, inst->affectTrans);
+	append_int(buf, &pos, inst->affectDiffuse);
+	append_int(buf, &pos, inst->diffPower);
+	append_int(buf, &pos, inst->roughEnabled);
+	append_int(buf, &pos, inst->roughAmount);
+	append_int(buf, &pos, inst->aoEnabled);
+	append_int(buf, &pos, inst->aoSamples);
+	append_int(buf, &pos, inst->aoRadius);
+	append_int(buf, &pos, inst->aoStrength);
+	append_int(buf, &pos, inst->metallic);
+	append_int(buf, &pos, inst->blurReflEnabled);
+	append_int(buf, &pos, inst->blurReflSamples);
+	append_int(buf, &pos, inst->blurReflAmount);
+	append_int(buf, &pos, inst->envEnabled);
+	append_int(buf, &pos, inst->envSamples);
+	append_int(buf, &pos, inst->envStrength);
 
-	int_to_str(inst->reflPower, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->affectMirror, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->affectTrans, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->affectDiffuse, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->diffPower, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->roughEnabled, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->roughAmount, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->aoEnabled, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->aoSamples, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->aoRadius, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->aoStrength, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->metallic, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->blurReflEnabled, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->blurReflSamples, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->blurReflAmount, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->envEnabled, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->envSamples, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->envStrength, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
+	(*ss->write)(ss->writeData, buf, pos);
 
 	return 0;
 }

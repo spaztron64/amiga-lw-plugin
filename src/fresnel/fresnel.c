@@ -76,19 +76,6 @@ int_to_str(int val, char *buf, int buflen)
 	buf[len] = '\0';
 }
 
-static int
-str_to_int(const char *s)
-{
-	int val = 0, neg = 0;
-
-	while (*s == ' ') s++;
-	if (*s == '-') { neg = 1; s++; }
-	while (*s >= '0' && *s <= '9') {
-		val = val * 10 + (*s - '0');
-		s++;
-	}
-	return neg ? -val : val;
-}
 
 /* ----------------------------------------------------------------
  * Math helpers (avoid libnix pow/fabs)
@@ -184,47 +171,58 @@ Copy(FresnelInst *from, FresnelInst *to)
 	return 0;
 }
 
+static const char *
+parse_int(const char *s, int *val)
+{
+	int neg = 0;
+	*val = 0;
+	while (*s == ' ') s++;
+	if (*s == '-') { neg = 1; s++; }
+	while (*s >= '0' && *s <= '9') {
+		*val = *val * 10 + (*s - '0');
+		s++;
+	}
+	if (neg) *val = -*val;
+	return s;
+}
+
+static void
+append_int(char *buf, int *pos, int val)
+{
+	char tmp[12];
+	int i;
+	int_to_str(val, tmp, 12);
+	if (*pos > 0) buf[(*pos)++] = ' ';
+	for (i = 0; tmp[i]; i++)
+		buf[(*pos)++] = tmp[i];
+	buf[*pos] = '\0';
+}
+
 XCALL_(static LWError)
 Load(FresnelInst *inst, const LWLoadState *ls)
 {
-	char buf[32];
+	char buf[64];
+	const char *p;
+	int v;
 
 	XCALL_INIT;
 
-	if (ls->ioMode != LWIO_SCENE)
-		return 0;
-
 	buf[0] = '\0';
-	(*ls->read)(ls->readData, buf, 32);
-	if (buf[0] == '\0')
-		(*ls->read)(ls->readData, buf, 32);
-	if (buf[0])
-		inst->ior = str_to_int(buf) / 1000.0;
+	(*ls->read)(ls->readData, buf, 63);
+	buf[63] = '\0';
+	if (buf[0] == '\0') {
+		(*ls->read)(ls->readData, buf, 63);
+		buf[63] = '\0';
+	}
+	if (!buf[0]) return 0;
 
-	buf[0] = '\0';
-	(*ls->read)(ls->readData, buf, 32);
-	if (buf[0])
-		inst->reflPower = str_to_int(buf);
-
-	buf[0] = '\0';
-	(*ls->read)(ls->readData, buf, 32);
-	if (buf[0])
-		inst->affectMirror = str_to_int(buf);
-
-	buf[0] = '\0';
-	(*ls->read)(ls->readData, buf, 32);
-	if (buf[0])
-		inst->affectTrans = str_to_int(buf);
-
-	buf[0] = '\0';
-	(*ls->read)(ls->readData, buf, 32);
-	if (buf[0])
-		inst->affectDiffuse = str_to_int(buf);
-
-	buf[0] = '\0';
-	(*ls->read)(ls->readData, buf, 32);
-	if (buf[0])
-		inst->diffPower = str_to_int(buf);
+	p = buf;
+	p = parse_int(p, &v); inst->ior = v / 1000.0;
+	p = parse_int(p, &v); inst->reflPower = v;
+	p = parse_int(p, &v); inst->affectMirror = v;
+	p = parse_int(p, &v); inst->affectTrans = v;
+	p = parse_int(p, &v); inst->affectDiffuse = v;
+	p = parse_int(p, &v); inst->diffPower = v;
 
 	compute_f0(inst);
 	return 0;
@@ -233,30 +231,19 @@ Load(FresnelInst *inst, const LWLoadState *ls)
 XCALL_(static LWError)
 Save(FresnelInst *inst, const LWSaveState *ss)
 {
-	char buf[32];
+	char buf[64];
+	int pos = 0;
 
 	XCALL_INIT;
 
-	if (ss->ioMode != LWIO_SCENE)
-		return 0;
+	append_int(buf, &pos, (int)(inst->ior * 1000.0));
+	append_int(buf, &pos, inst->reflPower);
+	append_int(buf, &pos, inst->affectMirror);
+	append_int(buf, &pos, inst->affectTrans);
+	append_int(buf, &pos, inst->affectDiffuse);
+	append_int(buf, &pos, inst->diffPower);
 
-	int_to_str((int)(inst->ior * 1000.0), buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->reflPower, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->affectMirror, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->affectTrans, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->affectDiffuse, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
-
-	int_to_str(inst->diffPower, buf, 32);
-	(*ss->write)(ss->writeData, buf, strlen(buf));
+	(*ss->write)(ss->writeData, buf, pos);
 
 	return 0;
 }
