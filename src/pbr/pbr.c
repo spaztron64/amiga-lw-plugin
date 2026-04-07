@@ -424,7 +424,7 @@ Flags(PBRInst *inst)
 		f |= LWSHF_COLOR | LWSHF_MIRROR | LWSHF_RAYTRACE;
 
 	if (inst->envEnabled)
-		f |= LWSHF_COLOR | LWSHF_LUMINOUS | LWSHF_RAYTRACE;
+		f |= LWSHF_LUMINOUS | LWSHF_COLOR | LWSHF_RAYTRACE;
 
 	return f;
 }
@@ -582,58 +582,21 @@ Evaluate(PBRInst *inst, ShaderAccess *sa)
 		}
 	}
 
-	/* --- Environment Sampling: hemisphere rayTrace for indirect light --- */
-	if (inst->envEnabled && inst->envSamples > 0 && sa->rayTrace) {
+	/* --- Environment Light: normal-based ambient boost --- */
+	if (inst->envEnabled && inst->envStrength > 0) {
 		double envStr = inst->envStrength / 100.0;
-		int    nSamp = inst->envSamples;
-		double accR = 0.0, accG = 0.0, accB = 0.0;
-		double totalWeight = 0.0;
-		int    i;
-		double pos[3];
-
-		if (nSamp > 16) nSamp = 16;
-
-		pos[0] = sa->wPos[0] + sa->wNorm[0] * 0.001;
-		pos[1] = sa->wPos[1] + sa->wNorm[1] * 0.001;
-		pos[2] = sa->wPos[2] + sa->wNorm[2] * 0.001;
-
-		for (i = 0; i < nSamp; i++) {
-			double dir[3], col[3], dot, dist;
-
-			dir[0] = hemi_dirs[i][0];
-			dir[1] = hemi_dirs[i][1];
-			dir[2] = hemi_dirs[i][2];
-
-			dot = dir[0]*sa->wNorm[0] + dir[1]*sa->wNorm[1]
-			    + dir[2]*sa->wNorm[2];
-			if (dot <= 0.0) {
-				dir[0] = -dir[0];
-				dir[1] = -dir[1];
-				dir[2] = -dir[2];
-				dot = -dot;
-			}
-
-			col[0] = col[1] = col[2] = 0.0;
-			dist = (*sa->rayTrace)(pos, dir, col);
-			(void)dist;
-
-			accR += col[0] * dot;
-			accG += col[1] * dot;
-			accB += col[2] * dot;
-			totalWeight += dot;
-		}
-
-		if (totalWeight > 0.0) {
-			double invW = envStr / totalWeight;
-			sa->color[0] += accR * invW;
-			sa->color[1] += accG * invW;
-			sa->color[2] += accB * invW;
-			if (sa->color[0] > 1.0) sa->color[0] = 1.0;
-			if (sa->color[1] > 1.0) sa->color[1] = 1.0;
-			if (sa->color[2] > 1.0) sa->color[2] = 1.0;
-			sa->luminous += envStr * 0.3;
-			if (sa->luminous > 1.0) sa->luminous = 1.0;
-		}
+		double skyDot = sa->wNorm[1];
+		double envFactor;
+		if (skyDot < 0.0) skyDot = 0.0;
+		envFactor = (0.3 + 0.7 * skyDot) * envStr;
+		sa->luminous += envFactor * 0.5;
+		if (sa->luminous > 1.0) sa->luminous = 1.0;
+		sa->color[0] += envFactor * sa->color[0] * 0.3;
+		sa->color[1] += envFactor * sa->color[1] * 0.3;
+		sa->color[2] += envFactor * sa->color[2] * 0.3;
+		if (sa->color[0] > 1.0) sa->color[0] = 1.0;
+		if (sa->color[1] > 1.0) sa->color[1] = 1.0;
+		if (sa->color[2] > 1.0) sa->color[2] = 1.0;
 	}
 }
 

@@ -139,6 +139,7 @@ typedef struct {
 	int    streakCount;
 	int    randomRotation;
 	int    showRing;
+	int    anamorphic;
 } LensFlareInst;
 
 /* ----------------------------------------------------------------
@@ -167,6 +168,7 @@ Create(LWError *err)
 	inst->streakCount = 6;
 	inst->randomRotation = 1;
 	inst->showRing = 1;
+	inst->anamorphic = 1;
 
 	return inst;
 }
@@ -211,6 +213,7 @@ Load(LensFlareInst *inst, const LWLoadState *ls)
 	p = lf_parse_int(p, &v); inst->streakCount = v;
 	p = lf_parse_int(p, &v); inst->randomRotation = v;
 	p = lf_parse_int(p, &v); inst->showRing = v;
+	p = lf_parse_int(p, &v); inst->anamorphic = v;
 
 	if (inst->threshold < 0) inst->threshold = 0;
 	if (inst->threshold > 255) inst->threshold = 255;
@@ -232,6 +235,7 @@ Save(LensFlareInst *inst, const LWSaveState *ss)
 	lf_append_int(buf, &pos, inst->streakCount);
 	lf_append_int(buf, &pos, inst->randomRotation);
 	lf_append_int(buf, &pos, inst->showRing);
+	lf_append_int(buf, &pos, inst->anamorphic);
 
 	(*ss->write)(ss->writeData, buf, pos);
 
@@ -403,29 +407,30 @@ Process(LensFlareInst *inst, const FilterAccess *fa)
 					}
 				}
 
-				{
+				if (inst->anamorphic) {
+					double ax = dx > 0 ? dx : -dx;
+					if (dy > -4.0 && dy < 4.0 && ax < (double)sStrk) {
+						double hfade = 1.0 - ax / (double)sStrk;
+						double hw = 1.0 / (1.0 + dy * dy * 0.3);
+						double h = hfade * hw * inten * bright * 0.5;
+							tR += h * 0.4;
+							tG += h * 0.6;
+							tB += h * 1.0;
+						}
+					}
+
+				if (nStrk > 0) {
 					double sdx = dx, sdy = dy;
 					if (inst->randomRotation) {
 						int ri = ((fx * 7 + fy * 13) >> 2) & 7;
 						sdx = dx * rot_cos[ri] + dy * rot_sin[ri];
 						sdy = -dx * rot_sin[ri] + dy * rot_cos[ri];
 					}
-					{
-						double ax = sdx > 0 ? sdx : -sdx;
-						if (sdy > -4.0 && sdy < 4.0 && ax < (double)sStrk) {
-							double hfade = 1.0 - ax / (double)sStrk;
-							double hw = 1.0 / (1.0 + sdy * sdy * 0.3);
-							double h = hfade * hw * inten * bright * 0.5;
-							tR += h * 0.6;
-							tG += h * 0.8;
-							tB += h * 1.0;
-						}
-					}
-
 					for (s = 0; s < nStrk; s++) {
 						double along = sdx * streak_dx[s] + sdy * streak_dy[s];
 						double perp  = sdx * streak_dy[s] - sdy * streak_dx[s];
 						double p2 = perp * perp;
+						if (along < 0.0) along = -along;
 
 						if (along > 0.0 && along < (double)sStrk && p2 < 16.0) {
 							double fade = 1.0 - along / (double)sStrk;
@@ -472,8 +477,8 @@ Flags(LensFlareInst *inst)
  * Interface
  * ---------------------------------------------------------------- */
 
-static const char *streakItems[] = { "2", "4", "6", 0 };
-static int streakValues[] = { 2, 4, 6 };
+static const char *starItems[] = { "Off", "2", "4", "6", 0 };
+static int starValues[] = { 0, 2, 4, 6 };
 
 XCALL_(static int)
 Interface(
@@ -484,9 +489,9 @@ Interface(
 {
 	LWPanelFuncs *panl;
 	LWPanelID     pan;
-	LWControl    *ctlThresh, *ctlGlow, *ctlStreak, *ctlInten, *ctlStrkN;
-	LWControl    *ctlRandRot, *ctlRing;
-	int           strkIdx;
+	LWControl    *ctlThresh, *ctlGlow, *ctlStreak, *ctlInten, *ctlStarN;
+	LWControl    *ctlRandRot, *ctlRing, *ctlAnamorphic;
+	int           starIdx;
 
 	XCALL_INIT;
 	if (version != 1)
@@ -509,30 +514,34 @@ Interface(
 		ctlGlow   = INT_CTL(panl, pan, "Glow Radius");
 		ctlStreak = INT_CTL(panl, pan, "Streak Length");
 		ctlInten  = SLIDER_CTL(panl, pan, "Intensity", 150, 0, 100);
-		ctlStrkN  = POPUP_CTL(panl, pan, "Streaks", streakItems);
+		ctlStarN  = POPUP_CTL(panl, pan, "Star Filter", starItems);
 		ctlRandRot = BOOL_CTL(panl, pan, "Random Rotation");
 		ctlRing   = BOOL_CTL(panl, pan, "Show Ring");
+		ctlAnamorphic = BOOL_CTL(panl, pan, "Anamorphic");
 
 		SET_INT(ctlThresh, inst->threshold);
 		SET_INT(ctlGlow, inst->glowRadius);
 		SET_INT(ctlStreak, inst->streakLength);
 		SET_INT(ctlInten, inst->intensity);
-		strkIdx = (inst->streakCount <= 2) ? 0
-		        : (inst->streakCount <= 4) ? 1 : 2;
-		SET_INT(ctlStrkN, strkIdx);
+		starIdx = (inst->streakCount <= 0) ? 0
+		        : (inst->streakCount <= 2) ? 1
+		        : (inst->streakCount <= 4) ? 2 : 3;
+		SET_INT(ctlStarN, starIdx);
 		SET_INT(ctlRandRot, inst->randomRotation);
 		SET_INT(ctlRing, inst->showRing);
+		SET_INT(ctlAnamorphic, inst->anamorphic);
 
 		if ((*panl->open)(pan, PANF_BLOCKING | PANF_CANCEL)) {
 			GET_INT(ctlThresh, inst->threshold);
 			GET_INT(ctlGlow, inst->glowRadius);
 			GET_INT(ctlStreak, inst->streakLength);
 			GET_INT(ctlInten, inst->intensity);
-			GET_INT(ctlStrkN, strkIdx);
-			inst->streakCount = (strkIdx < 3)
-			                  ? streakValues[strkIdx] : 6;
+			GET_INT(ctlStarN, starIdx);
+			inst->streakCount = (starIdx > 0 && starIdx < 4)
+			                  ? starValues[starIdx] : 0;
 			GET_INT(ctlRandRot, inst->randomRotation);
 			GET_INT(ctlRing, inst->showRing);
+			GET_INT(ctlAnamorphic, inst->anamorphic);
 
 			if (inst->threshold < 0) inst->threshold = 0;
 			if (inst->threshold > 255) inst->threshold = 255;
